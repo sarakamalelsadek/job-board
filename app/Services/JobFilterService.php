@@ -29,55 +29,70 @@ class JobFilterService
 
     protected function applyFilters(array $filters)
     {
-        foreach ($filters as $key => $value) {
-            if (is_array($value)) {
-                $this->applyComplexFilters($key, $value);
-            } else {
-                $this->applySimpleFilter($key, $value);
+        $this->query->where(function ($query) use ($filters) {
+            foreach ($filters as $key => $value) {
+                if (is_array($value) && isset($value['OR'])) {
+                    // apply OR filter
+                    $query->orWhere(function ($orQuery) use ($key, $value) {
+                        foreach ($value['OR'] as $orKey => $orValue) {
+                            if (is_array($orValue)) {
+                                $this->applyComplexFilters($orQuery, $orKey, $orValue, 'orWhere');
+                            } else {
+                                $this->applySimpleFilter($orQuery, $orKey, $orValue, 'orWhere');
+                            }
+                        }
+                    });
+                } else {
+                    // apply AND on default
+                    if (is_array($value)) {
+                        $this->applyComplexFilters($query, $key, $value);
+                    } else {
+                        $this->applySimpleFilter($query, $key, $value);
+                    }
+                }
             }
-        }
+        });
     }
 
-    protected function applySimpleFilter($key, $value)
+
+    protected function applySimpleFilter($query, $key, $value, $method = 'where')
     {
         if (in_array($key, ['title', 'description', 'company_name'])) {
-            $this->query->where($key, 'LIKE', "%$value%");
+            $query->$method($key, 'LIKE', "%$value%");
         } elseif (in_array($key, ['salary_min', 'salary_max'])) {
-            $this->query->where($key, '>=', $value);
+            $query->$method($key, '>=', $value);
         } elseif ($key === 'is_remote') {
-            $this->query->where($key, $value);
+            $query->$method($key, $value);
         } elseif (in_array($key, ['job_type'])) {
             if (is_array($value)) {
-                $this->query->whereIn($key, $value);
+                $query->$method($key, $value);
             } else {
-                $this->query->where($key, $value);
+                $query->$method($key, $value);
             }
         } elseif (in_array($key, ['published_at', 'created_at'])) {
-            $this->query->whereDate($key, '=', $value);
+            $query->$method($key, '=', $value);
         }
     }
 
-    protected function applyComplexFilters($key, array $values)
-    {   
-
+    protected function applyComplexFilters($query, $key, array $values, $method = 'whereHas')
+    {
         if (in_array($key, ['languages', 'locations', 'categories'])) {
-            $this->query->whereHas($key, function ($query) use ($values) {
-                $query->whereIn('name', $values);
+            $query->$method($key, function ($subQuery) use ($values) {
+                $subQuery->whereIn('name', $values);
             });
         } elseif (str_starts_with($key, 'attribute:')) {
             $attributeName = str_replace('attribute:', '', $key);
-            $this->query->whereHas('jobAttributeValues', function ($query) use ($attributeName, $values) {
-                $query->whereHas('attribute', function ($subQuery) use ($attributeName) {
-                    $subQuery->where('name', $attributeName);
+            $query->$method('jobAttributeValues', function ($subQuery) use ($attributeName, $values) {
+                $subQuery->whereHas('attribute', function ($attrQuery) use ($attributeName) {
+                    $attrQuery->where('name', $attributeName);
                 });
-                
+
                 if (is_array($values)) {
-                    $query->whereIn('value', $values);
+                    $subQuery->whereIn('value', $values);
                 } else {
-                    $query->where('value', '=', $values);
+                    $subQuery->where('value', '=', $values);
                 }
             });
         }
-        dump($this->query->toRawSql());
     }
 }
