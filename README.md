@@ -42,6 +42,9 @@ php artisan serve
 3. **OR Filtering**
     /api/jobs?filter={"OR":[{"title":"developer"},{"job_type":"full-time"}]}
 
+4. **Attribute filtering**
+    /api/jobs?filter={"attribute:years_experience":["4"]}
+
 
 
 
