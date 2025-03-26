@@ -39,8 +39,20 @@ class Job extends Model
         return $this->belongsToMany(Category::class, 'job_category');
     }
 
-    public function attributes(): HasMany
+    public function jobAttributeValues(): HasMany
     {
         return $this->hasMany(JobAttributeValue::class);
     }
+
+    public function attributes()
+{
+    return $this->hasManyThrough(
+        Attribute::class, 
+        JobAttributeValue::class,
+        'job_id',      // المفتاح الأجنبي في `job_attribute_values`
+        'id',          // المفتاح الأساسي في `attributes`
+        'id',          // المفتاح الأساسي في `jobs`
+        'attribute_id' // المفتاح الأجنبي في `job_attribute_values`
+    );
+}
   }

@@ -14,14 +14,14 @@ class JobFilterService
         $this->query = $query;
     }
 
-    public function apply(Request $request)
+    public function apply($request)
     {
-       
         $this->query->where('status', Job::STATUS_PUBLISHED);
 
-        $filters = $request->filters(); 
+        $filters = $request->query('filter', []);
         if (!empty($filters)) {
-            $this->applyFilters($filters);
+
+            $this->applyFilters(json_decode($filters,true));
         }
 
         return $this->query;
@@ -29,31 +29,55 @@ class JobFilterService
 
     protected function applyFilters(array $filters)
     {
-        $this->query->where(function ($query) use ($filters) {
-            foreach ($filters as $key => $value) {
-                if ($key === 'OR') {
-                    $query->orWhere(function ($subQuery) use ($value) {
-                        $this->applyFiltersToQuery($subQuery, $value);
-                    });
-                } else {
-                    $this->applyFiltersToQuery($query, [$key => $value]);
-                }
-            }
-        });
-    }
-
-    protected function applyFiltersToQuery($query, array $filters)
-    {
         foreach ($filters as $key => $value) {
-            if (in_array($key, ['languages', 'locations', 'categories'])) {
-                $query->whereHas($key, function ($subQuery) use ($value) {
-                    $subQuery->whereIn('name', (array) $value);
-                });
-            } elseif ($key === 'salary_min') {
-                $query->where('salary_min', '>=', $value);
-            } elseif ($key === 'title') {
-                $query->where('title', 'LIKE', "%$value%");
+            if (is_array($value)) {
+                $this->applyComplexFilters($key, $value);
+            } else {
+                $this->applySimpleFilter($key, $value);
             }
         }
+    }
+
+    protected function applySimpleFilter($key, $value)
+    {
+        if (in_array($key, ['title', 'description', 'company_name'])) {
+            $this->query->where($key, 'LIKE', "%$value%");
+        } elseif (in_array($key, ['salary_min', 'salary_max'])) {
+            $this->query->where($key, '>=', $value);
+        } elseif ($key === 'is_remote') {
+            $this->query->where($key, $value);
+        } elseif (in_array($key, ['job_type'])) {
+            if (is_array($value)) {
+                $this->query->whereIn($key, $value);
+            } else {
+                $this->query->where($key, $value);
+            }
+        } elseif (in_array($key, ['published_at', 'created_at'])) {
+            $this->query->whereDate($key, '=', $value);
+        }
+    }
+
+    protected function applyComplexFilters($key, array $values)
+    {   
+
+        if (in_array($key, ['languages', 'locations', 'categories'])) {
+            $this->query->whereHas($key, function ($query) use ($values) {
+                $query->whereIn('name', $values);
+            });
+        } elseif (str_starts_with($key, 'attribute:')) {
+            $attributeName = str_replace('attribute:', '', $key);
+            $this->query->whereHas('jobAttributeValues', function ($query) use ($attributeName, $values) {
+                $query->whereHas('attribute', function ($subQuery) use ($attributeName) {
+                    $subQuery->where('name', $attributeName);
+                });
+                
+                if (is_array($values)) {
+                    $query->whereIn('value', $values);
+                } else {
+                    $query->where('value', '=', $values);
+                }
+            });
+        }
+        dump($this->query->toRawSql());
     }
 }
